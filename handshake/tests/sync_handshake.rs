@@ -9,7 +9,7 @@ use std::{
     thread,
 };
 
-use cable_handshake::{sync::handshake, Result, Version};
+use cable_handshake::{sync::handshake, Result};
 use snow::Builder as NoiseBuilder;
 
 #[test]

@@ -11,7 +11,7 @@ use async_std::{
     task,
 };
 
-use cable_handshake::{async_std::handshake, Result, Version};
+use cable_handshake::{async_std::handshake, Result};
 use snow::Builder as NoiseBuilder;
 
 const MSG_1: &[u8; 29] = b"An impeccably polite pangolin";

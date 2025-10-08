@@ -13,8 +13,6 @@ pub mod sync;
 mod utils;
 mod version;
 
-use desert::{FromBytes, ToBytes};
-use log::warn;
 use snow::{
     Builder as NoiseBuilder, HandshakeState as NoiseHandshakeState,
     TransportState as NoiseTransportState,

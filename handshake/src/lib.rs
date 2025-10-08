@@ -34,8 +34,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// handshake.
 #[derive(Debug, PartialEq)]
 pub struct HandshakeBase {
-    /// The handshake protocol version.
-    version: Version,
     /// The pre-shared key (aka. the "cabal key").
     psk: [u8; 32],
     // TODO: Could this rather be a sized array?
@@ -66,14 +64,6 @@ enum Role {
 
 // Client states. The client acts as the handshake initiator.
 
-/// The client state that can send the version.
-#[derive(Debug)]
-struct ClientSendVersion;
-
-/// The client state that can receive the version.
-#[derive(Debug)]
-struct ClientRecvVersion;
-
 /// The client state that can build the Noise handshake state machine.
 #[derive(Debug)]
 struct ClientBuildNoiseStateMachine;
@@ -95,14 +85,6 @@ struct ClientSendStaticKey(NoiseHandshakeState);
 struct ClientInitTransportMode(NoiseHandshakeState);
 
 // Server states. The server acts as the handshake responder.
-
-/// The server state that can receive the version.
-#[derive(Debug)]
-struct ServerRecvVersion;
-
-/// The server state that can receive the version.
-#[derive(Debug)]
-struct ServerSendVersion;
 
 /// The server state that can build the Noise handshake state machine.
 #[derive(Debug)]
@@ -137,8 +119,6 @@ pub struct HandshakeComplete(NoiseTransportState);
 //
 // Client:
 //
-// - [`ClientSendVersion`] - `send_client_version()` -> [`ClientRecvVersion`]
-// - [`ClientRecvVersion`] - `recv_server_version()` -> [`ClientBuildNoiseStateMachine`]
 // - [`ClientBuildNoiseStateMachine`] - `build_client_noise_state_machine()` -> [`ClientSendEphemeralKey`]
 // - [`ClientSendEphemeralKey`] - `send_client_ephemeral_key()` -> [`ClientRecvEphemeralAndStaticKey`]
 // - [`ClientRecvEphemeralAndStaticKey`] - `recv_server_ephemeral_and_static_key()` -> [`ClientSendStaticKey`]
@@ -147,8 +127,6 @@ pub struct HandshakeComplete(NoiseTransportState);
 //
 // Server:
 //
-// - [`ServerRecvVersion`] - `recv_client_version()` -> [`ServerSendVersion`]
-// - [`ServerSendVersion`] - `send_server_version()` -> [`ServerBuildNoiseStateMachine`]
 // - [`ServerBuildNoiseStateMachine`] - `build_server_noise_state_machine()` -> [`ServerRecvEphemeralKey`]
 // - [`ServerRecvEphemeralKey`] - `recv_client_ephemeral_key()` -> [`ServerSendEphemeralAndStaticKey`]
 // - [`ServerSendEphemeralAndStaticKey`] - `send_server_ephemeral_and_static_key()` -> [`ServerRecvStaticKey`]
@@ -156,16 +134,12 @@ pub struct HandshakeComplete(NoiseTransportState);
 // - [`ServerInitTransportMode`] - `init_server_transport_mode()` -> [`HandshakeComplete`]
 pub trait State {}
 
-impl State for ClientSendVersion {}
-impl State for ClientRecvVersion {}
 impl State for ClientBuildNoiseStateMachine {}
 impl State for ClientSendEphemeralKey {}
 impl State for ClientRecvEphemeralAndStaticKey {}
 impl State for ClientSendStaticKey {}
 impl State for ClientInitTransportMode {}
 
-impl State for ServerRecvVersion {}
-impl State for ServerSendVersion {}
 impl State for ServerBuildNoiseStateMachine {}
 impl State for ServerRecvEphemeralKey {}
 impl State for ServerSendEphemeralAndStaticKey {}
@@ -181,15 +155,16 @@ fn build_noise_state_machine(
     psk: [u8; 32],
     private_key: Vec<u8>,
 ) -> Result<NoiseHandshakeState> {
+    let prologe = "CABLE1.0";
     let handshake_state = match role {
         Role::Initiator => NoiseBuilder::new("Noise_XXpsk0_25519_ChaChaPoly_BLAKE2b".parse()?)
             .local_private_key(&private_key)
-            .prologue("CABLE".as_bytes())
+            .prologue(prologe.as_bytes())
             .psk(0, &psk)
             .build_initiator()?,
         Role::Responder => NoiseBuilder::new("Noise_XXpsk0_25519_ChaChaPoly_BLAKE2b".parse()?)
             .local_private_key(&private_key)
-            .prologue("CABLE".as_bytes())
+            .prologue(prologe.as_bytes())
             .psk(0, &psk)
             .build_responder()?,
     };
@@ -199,68 +174,19 @@ fn build_noise_state_machine(
 
 // Client state implementations.
 
-impl Handshake<ClientSendVersion> {
+impl Handshake<ClientBuildNoiseStateMachine> {
     /// Create a new handshake client that can send the version data.
-    fn new_client(
-        version: Version,
-        psk: [u8; 32],
-        private_key: Vec<u8>,
-    ) -> Handshake<ClientSendVersion> {
+    fn new_client(psk: [u8; 32], private_key: Vec<u8>) -> Handshake<ClientBuildNoiseStateMachine> {
         let base = HandshakeBase {
-            version,
             psk,
             private_key,
             remote_public_key: None,
         };
-        let state = ClientSendVersion;
+        let state = ClientBuildNoiseStateMachine;
 
         Handshake { base, state }
     }
 
-    /// Send the client version data to the server and advance to the next
-    /// client state.
-    fn send_client_version(self, send_buf: &mut [u8]) -> Result<Handshake<ClientRecvVersion>> {
-        concat_into!(send_buf, &self.base.version.to_bytes()?);
-        let state = ClientRecvVersion;
-        let handshake = Handshake {
-            base: self.base,
-            state,
-        };
-
-        Ok(handshake)
-    }
-}
-
-impl Handshake<ClientRecvVersion> {
-    /// Receive the version data from the server and validate it before
-    /// advancing to the next client state.
-    ///
-    /// Terminate the handshake with an error if the major version of the
-    /// responder differs from that of the initiator.
-    fn recv_server_version(
-        self,
-        recv_buf: &mut [u8],
-    ) -> Result<Handshake<ClientBuildNoiseStateMachine>> {
-        let (_n, server_version) = Version::from_bytes(recv_buf)?;
-        if server_version.major() != self.base.version.major() {
-            warn!("Received incompatible major version from handshake responder");
-            return Err(HandshakeError::IncompatibleServerVersion {
-                received: server_version.major(),
-                expected: self.base.version.major(),
-            }
-            .into());
-        }
-        let state = ClientBuildNoiseStateMachine;
-        let handshake = Handshake {
-            base: self.base,
-            state,
-        };
-
-        Ok(handshake)
-    }
-}
-
-impl Handshake<ClientBuildNoiseStateMachine> {
     /// Build the Noise handshake state machine for the client with the PSK and
     /// private key.
     fn build_client_noise_state_machine(self) -> Result<Handshake<ClientSendEphemeralKey>> {
@@ -373,63 +299,19 @@ impl Handshake<ClientInitTransportMode> {
 
 // Server state implementations.
 
-impl Handshake<ServerRecvVersion> {
+impl Handshake<ServerBuildNoiseStateMachine> {
     /// Create a new handshake server that can receive the version data.
-    fn new_server(
-        version: Version,
-        psk: [u8; 32],
-        private_key: Vec<u8>,
-    ) -> Handshake<ServerRecvVersion> {
+    fn new_server(psk: [u8; 32], private_key: Vec<u8>) -> Handshake<ServerBuildNoiseStateMachine> {
         let base = HandshakeBase {
-            version,
             psk,
             private_key,
             remote_public_key: None,
         };
-        let state = ServerRecvVersion;
+        let state = ServerBuildNoiseStateMachine;
 
         Handshake { base, state }
     }
 
-    /// Receive the version data from the client and validate it before
-    /// advancing to the next client state.
-    fn recv_client_version(self, recv_buf: &mut [u8]) -> Result<Handshake<ServerSendVersion>> {
-        let (_n, client_version) = Version::from_bytes(recv_buf)?;
-        if client_version.major() != self.base.version.major() {
-            warn!("Received incompatible major version from handshake initiator");
-            // There is no error returned here because the server must still
-            // respond with it's own version data. The client will then error
-            // and terminate the handshake.
-        }
-        let state = ServerSendVersion;
-        let handshake = Handshake {
-            base: self.base,
-            state,
-        };
-
-        Ok(handshake)
-    }
-}
-
-impl Handshake<ServerSendVersion> {
-    /// Send server version data to the client and advance to the next server
-    /// state.
-    fn send_server_version(
-        self,
-        send_buf: &mut [u8],
-    ) -> Result<Handshake<ServerBuildNoiseStateMachine>> {
-        concat_into!(send_buf, &self.base.version.to_bytes()?);
-        let state = ServerBuildNoiseStateMachine;
-        let handshake = Handshake {
-            base: self.base,
-            state,
-        };
-
-        Ok(handshake)
-    }
-}
-
-impl Handshake<ServerBuildNoiseStateMachine> {
     /// Build the Noise handshake state machine for the server with the PSK and
     /// private key.
     fn build_server_noise_state_machine(self) -> Result<Handshake<ServerRecvEphemeralKey>> {
@@ -542,15 +424,14 @@ impl Handshake<ServerInitTransportMode> {
 mod tests {
     use constants::{
         EPHEMERAL_AND_STATIC_KEY_BYTES_LEN, EPHEMERAL_KEY_BYTES_LEN, STATIC_KEY_BYTES_LEN,
-        VERSION_BYTES_LEN,
     };
 
     use super::*;
 
-    fn init_handshakers(
-        client_version: (u8, u8),
-        server_version: (u8, u8),
-    ) -> Result<(Handshake<ClientSendVersion>, Handshake<ServerRecvVersion>)> {
+    fn init_handshakers() -> Result<(
+        Handshake<ClientBuildNoiseStateMachine>,
+        Handshake<ServerBuildNoiseStateMachine>,
+    )> {
         let psk: [u8; 32] = [1; 32];
 
         let builder = NoiseBuilder::new("Noise_XXpsk0_25519_ChaChaPoly_BLAKE2b".parse()?);
@@ -561,105 +442,19 @@ mod tests {
         let server_keypair = builder.generate_keypair()?;
         let server_private_key = server_keypair.private;
 
-        let client_version = Version::init(client_version.0, client_version.1);
-        let server_version = Version::init(server_version.0, server_version.1);
-
-        let hs_client = Handshake::new_client(client_version, psk, client_private_key);
-        let hs_server = Handshake::new_server(server_version, psk, server_private_key);
+        let hs_client = Handshake::new_client(psk, client_private_key);
+        let hs_server = Handshake::new_server(psk, server_private_key);
 
         Ok((hs_client, hs_server))
     }
 
     #[test]
-    fn version_to_bytes() -> Result<()> {
-        let version = Version::init(0, 1);
-
-        let version_to_bytes = version.to_bytes()?;
-        let version_from_bytes = Version::from_bytes(&version_to_bytes)?;
-
-        assert_eq!(version, version_from_bytes.1);
-
-        Ok(())
-    }
-
-    #[test]
-    fn version_exchange_success() -> Result<()> {
-        let (hs_client, hs_server) = init_handshakers((1, 0), (1, 0))?;
-
-        let mut buf = [0; 8];
-
-        let mut client_buf = &mut buf[..VERSION_BYTES_LEN];
-        let hs_client = hs_client.send_client_version(&mut client_buf)?;
-
-        let mut server_buf = &mut buf[..VERSION_BYTES_LEN];
-        let hs_server = hs_server.recv_client_version(&mut server_buf)?;
-
-        let mut server_buf = &mut buf[..VERSION_BYTES_LEN];
-        hs_server.send_server_version(&mut server_buf)?;
-
-        let mut client_buf = &mut buf[..VERSION_BYTES_LEN];
-        hs_client.recv_server_version(&mut client_buf)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn version_exchange_failure() -> Result<()> {
-        let (hs_client, hs_server) = init_handshakers((3, 7), (1, 0))?;
-
-        let mut buf = [0; 8];
-
-        let mut client_buf = &mut buf[..VERSION_BYTES_LEN];
-        let hs_client = hs_client.send_client_version(&mut client_buf)?;
-
-        let mut server_buf = &mut buf[..VERSION_BYTES_LEN];
-        let hs_server = hs_server.recv_client_version(&mut server_buf)?;
-
-        let mut server_buf = &mut buf[..VERSION_BYTES_LEN];
-        let _hs_server = hs_server.send_server_version(&mut server_buf)?;
-
-        let mut client_buf = &mut buf[..VERSION_BYTES_LEN];
-        let hs_client = hs_client.recv_server_version(&mut client_buf);
-
-        assert!(hs_client.is_err());
-
-        let err = hs_client.unwrap_err().downcast::<HandshakeError>().unwrap();
-        assert_eq!(
-            *err,
-            HandshakeError::IncompatibleServerVersion {
-                received: 1,
-                expected: 3
-            }
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn handshake() -> Result<()> {
         // Build the handshake client and server.
-        let (hs_client, hs_server) = init_handshakers((1, 0), (1, 0))?;
+        let (hs_client, hs_server) = init_handshakers()?;
 
         // Define a shared buffer for sending and receiving messages.
         let mut buf = [0; 1024];
-
-        // Send and receive client version.
-        let (hs_client, hs_server) = {
-            let mut client_buf = &mut buf[..VERSION_BYTES_LEN];
-            let hs_client = hs_client.send_client_version(&mut client_buf)?;
-            let mut server_buf = &mut buf[..VERSION_BYTES_LEN];
-            let hs_server = hs_server.recv_client_version(&mut server_buf)?;
-            (hs_client, hs_server)
-        };
-
-        // Send and receive server version.
-        let (hs_client, hs_server) = {
-            let mut server_buf = &mut buf[..VERSION_BYTES_LEN];
-            let hs_server = hs_server.send_server_version(&mut server_buf)?;
-            let mut client_buf = &mut buf[..VERSION_BYTES_LEN];
-            let hs_client = hs_client.recv_server_version(&mut client_buf)?;
-            (hs_client, hs_server)
-        };
 
         // Build client and server Noise state machines.
         let (hs_client, hs_server) = {

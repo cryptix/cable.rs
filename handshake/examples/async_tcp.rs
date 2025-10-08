@@ -9,7 +9,7 @@ use std::env;
 
 use async_std::net::{TcpListener, TcpStream};
 
-use cable_handshake::{async_std::handshake, Result, Version};
+use cable_handshake::{async_std::handshake, Result};
 use snow::Builder as NoiseBuilder;
 
 fn help() {
@@ -23,9 +23,9 @@ async_tcp {{-s|--server}}
     );
 }
 
-fn setup() -> Result<(Version, [u8; 32], Vec<u8>)> {
+fn setup() -> Result<([u8; 32], Vec<u8>)> {
     // Define handshake version.
-    let version = Version::init(1, 0);
+    //let version = Version::init(1, 0);
 
     // Define pre-shared key.
     let psk: [u8; 32] = [1; 32];
@@ -35,7 +35,7 @@ fn setup() -> Result<(Version, [u8; 32], Vec<u8>)> {
     let keypair = builder.generate_keypair()?;
     let private_key = keypair.private;
 
-    Ok((version, psk, private_key))
+    Ok((psk, private_key))
 }
 
 #[async_std::main]
@@ -53,14 +53,14 @@ async fn main() {
 }
 
 async fn run_client() -> Result<()> {
-    let (version, psk, private_key) = setup()?;
+    let (psk, private_key) = setup()?;
 
     println!("Connecting to TCP server on 127.0.0.1:9999");
     let mut stream = TcpStream::connect("127.0.0.1:9999").await?;
     println!("Connected");
 
     println!("Initiating handshake...");
-    let mut encrypted = handshake::client(&mut stream, version, psk, private_key).await?;
+    let mut encrypted = handshake::client(&mut stream, psk, private_key).await?;
 
     // Write a short encrypted message.
     let short_msg = b"An impeccably polite pangolin";
@@ -95,7 +95,7 @@ async fn run_client() -> Result<()> {
 }
 
 async fn run_server() -> Result<()> {
-    let (version, psk, private_key) = setup()?;
+    let (psk, private_key) = setup()?;
 
     // Deploy a TCP listener.
     let listener = TcpListener::bind("127.0.0.1:9999").await?;
@@ -106,7 +106,7 @@ async fn run_server() -> Result<()> {
     let (mut stream, _addr) = listener.accept().await?;
 
     // Perform the handshake.
-    let mut encrypted = handshake::server(&mut stream, version, psk, private_key)
+    let mut encrypted = handshake::server(&mut stream, psk, private_key)
         .await
         .unwrap();
 

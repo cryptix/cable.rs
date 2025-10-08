@@ -17,10 +17,7 @@ use snow::Builder as NoiseBuilder;
 const MSG_1: &[u8; 29] = b"An impeccably polite pangolin";
 const MSG_2: [u8; 77777] = [7; 77777];
 
-fn setup() -> Result<(Version, [u8; 32], Vec<u8>)> {
-    // Define handshake version.
-    let version = Version::init(1, 0);
-
+fn setup() -> Result<([u8; 32], Vec<u8>)> {
     // Define pre-shared key.
     let psk: [u8; 32] = [1; 32];
 
@@ -29,17 +26,17 @@ fn setup() -> Result<(Version, [u8; 32], Vec<u8>)> {
     let keypair = builder.generate_keypair()?;
     let private_key = keypair.private;
 
-    Ok((version, psk, private_key))
+    Ok((psk, private_key))
 }
 
 async fn client_handshake() -> Result<()> {
-    let (version, psk, private_key) = setup()?;
+    let (psk, private_key) = setup()?;
 
     // Connect to the TCP server.
     let mut stream = TcpStream::connect("127.0.0.1:9999").await?;
 
     // Perform the handshake.
-    let mut encrypted = handshake::client(&mut stream, version, psk, private_key).await?;
+    let mut encrypted = handshake::client(&mut stream, psk, private_key).await?;
 
     // Write a short encrypted message.
     encrypted
@@ -67,7 +64,7 @@ async fn client_handshake() -> Result<()> {
 }
 
 async fn server_handshake() -> Result<()> {
-    let (version, psk, private_key) = setup()?;
+    let (psk, private_key) = setup()?;
 
     // Deploy a TCP listener.
     let listener = TcpListener::bind("127.0.0.1:9999").await?;
@@ -76,7 +73,7 @@ async fn server_handshake() -> Result<()> {
     let (mut stream, _addr) = listener.accept().await?;
 
     // Perform the handshake.
-    let mut encrypted = handshake::server(&mut stream, version, psk, private_key).await?;
+    let mut encrypted = handshake::server(&mut stream, psk, private_key).await?;
 
     // Read a short encrypted message.
     let msg = encrypted

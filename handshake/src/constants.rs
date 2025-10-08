@@ -18,6 +18,3 @@ pub const PUBLIC_KEY_BYTES_LEN: usize = 32;
 /// In the context of the Cable Handshake implementation, this value is the
 /// private key of the author keypair.
 pub const STATIC_KEY_BYTES_LEN: usize = 64;
-
-/// Size of the version message.
-pub const VERSION_BYTES_LEN: usize = 2;

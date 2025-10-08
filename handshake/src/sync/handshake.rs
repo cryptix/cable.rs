@@ -7,31 +7,19 @@ use std::io::{Read, Write};
 use crate::{
     constants::{
         EPHEMERAL_AND_STATIC_KEY_BYTES_LEN, EPHEMERAL_KEY_BYTES_LEN, STATIC_KEY_BYTES_LEN,
-        VERSION_BYTES_LEN,
     },
-    Handshake, HandshakeComplete, Result, Version,
+    Handshake, HandshakeComplete, Result,
 };
 
 /// Initiate the handshake over a synchronous stream and run to completion.
 pub fn client<T: Read + Write>(
     stream: &mut T,
-    version: Version,
     psk: [u8; 32],
     private_key: Vec<u8>,
 ) -> Result<Handshake<HandshakeComplete>> {
     let mut buf = [0; 256];
 
-    let handshake = Handshake::new_client(version, psk, private_key);
-
-    // Send version.
-    let send_buf = &mut buf[..VERSION_BYTES_LEN];
-    let handshake = handshake.send_client_version(send_buf)?;
-    stream.write_all(send_buf)?;
-
-    // Receive version.
-    let recv_buf = &mut buf[..VERSION_BYTES_LEN];
-    stream.read_exact(recv_buf)?;
-    let handshake = handshake.recv_server_version(recv_buf)?;
+    let handshake = Handshake::new_client(psk, private_key);
 
     // Build Noise state machine.
     let handshake = handshake.build_client_noise_state_machine()?;
@@ -59,23 +47,12 @@ pub fn client<T: Read + Write>(
 /// Respond to a handshake over a synchronous stream and run to completion.
 pub fn server<T: Read + Write>(
     stream: &mut T,
-    version: Version,
     psk: [u8; 32],
     private_key: Vec<u8>,
 ) -> Result<Handshake<HandshakeComplete>> {
     let mut buf = [0; 256];
 
-    let handshake = Handshake::new_server(version, psk, private_key);
-
-    // Receive version.
-    let recv_buf = &mut buf[..VERSION_BYTES_LEN];
-    stream.read_exact(recv_buf)?;
-    let handshake = handshake.recv_client_version(recv_buf)?;
-
-    // Send version.
-    let send_buf = &mut buf[..VERSION_BYTES_LEN];
-    let handshake = handshake.send_server_version(send_buf)?;
-    stream.write_all(send_buf)?;
+    let handshake = Handshake::new_server(psk, private_key);
 
     // Build Noise state machine.
     let handshake = handshake.build_server_noise_state_machine()?;

@@ -7,7 +7,7 @@
 
 use std::{env, fs, io::Write};
 
-use cable_handshake::{sync::handshake, Result, Version};
+use cable_handshake::{sync::handshake, Result};
 use io_streams::StreamDuplexer;
 use snow::Builder as NoiseBuilder;
 
@@ -23,9 +23,9 @@ fn help() {
     );
 }
 
-fn setup() -> Result<(Version, Vec<u8>, StreamDuplexer)> {
+fn setup() -> Result<(Vec<u8>, StreamDuplexer)> {
     // Define handshake version.
-    let version = Version::init(1, 0);
+    //let version = Version::init(1, 0);
 
     // Generate keypair.
     let builder = NoiseBuilder::new("Noise_XXpsk0_25519_ChaChaPoly_BLAKE2b".parse()?);
@@ -35,7 +35,7 @@ fn setup() -> Result<(Version, Vec<u8>, StreamDuplexer)> {
     // Construct a duplex stream.
     let stream = StreamDuplexer::stdin_stdout()?;
 
-    Ok((version, private_key, stream))
+    Ok((private_key, stream))
 }
 
 fn parse_psk_and_mode<'a>(psk_arg: &'a str, mode_arg: &'a str) -> ([u8; 32], &'a str) {
@@ -53,9 +53,9 @@ fn parse_psk_and_mode<'a>(psk_arg: &'a str, mode_arg: &'a str) -> ([u8; 32], &'a
 }
 
 fn run_client(psk: [u8; 32], msg: &str) -> Result<()> {
-    let (version, private_key, mut stream) = setup()?;
+    let (private_key, mut stream) = setup()?;
 
-    let mut encrypted = handshake::client(&mut stream, version, psk, private_key)?;
+    let mut encrypted = handshake::client(&mut stream, psk, private_key)?;
 
     // Write message.
     encrypted.write_message_to_stream(&mut stream, msg.as_bytes())?;
@@ -83,9 +83,9 @@ fn run_client(psk: [u8; 32], msg: &str) -> Result<()> {
 }
 
 fn run_server(psk: [u8; 32], msg: &str) -> Result<()> {
-    let (version, private_key, mut stream) = setup()?;
+    let (private_key, mut stream) = setup()?;
 
-    let mut encrypted = handshake::server(&mut stream, version, psk, private_key)?;
+    let mut encrypted = handshake::server(&mut stream, psk, private_key)?;
 
     // Read message.
     let received_msg = encrypted.read_message_from_stream(&mut stream)?;

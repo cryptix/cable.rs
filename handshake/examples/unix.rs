@@ -11,7 +11,7 @@ use std::{
     path::Path,
 };
 
-use cable_handshake::{sync::handshake, Result, Version};
+use cable_handshake::{sync::handshake, Result};
 use snow::Builder as NoiseBuilder;
 
 const SOCKET_PATH: &str = "/tmp/handshake.sock";
@@ -27,10 +27,7 @@ unix {{-s|--server}}
     );
 }
 
-fn setup() -> Result<(Version, [u8; 32], Vec<u8>)> {
-    // Define handshake version.
-    let version = Version::init(1, 0);
-
+fn setup() -> Result<([u8; 32], Vec<u8>)> {
     // Define pre-shared key.
     let psk: [u8; 32] = [1; 32];
 
@@ -39,7 +36,7 @@ fn setup() -> Result<(Version, [u8; 32], Vec<u8>)> {
     let keypair = builder.generate_keypair()?;
     let private_key = keypair.private;
 
-    Ok((version, psk, private_key))
+    Ok((psk, private_key))
 }
 
 fn main() {
@@ -56,14 +53,14 @@ fn main() {
 }
 
 fn run_client() -> Result<()> {
-    let (version, psk, private_key) = setup()?;
+    let (psk, private_key) = setup()?;
 
     println!("Connecting to Unix socket at {}", SOCKET_PATH);
     let mut stream = UnixStream::connect(SOCKET_PATH)?;
     println!("Connected");
 
     println!("Initiating handshake...");
-    let mut encrypted = handshake::client(&mut stream, version, psk, private_key)?;
+    let mut encrypted = handshake::client(&mut stream, psk, private_key)?;
 
     // Write a short encrypted message.
     let msg = b"An impeccably polite pangolin";
@@ -88,7 +85,7 @@ fn run_client() -> Result<()> {
 }
 
 fn run_server() -> Result<()> {
-    let (version, psk, private_key) = setup()?;
+    let (psk, private_key) = setup()?;
 
     // Deploy a Unix socket listener.
     let listener = UnixListener::bind(SOCKET_PATH)?;
@@ -100,7 +97,7 @@ fn run_server() -> Result<()> {
         println!("Accepted connection");
 
         println!("Responding to handshake...");
-        let mut encrypted = handshake::server(&mut stream, version, psk, private_key)?;
+        let mut encrypted = handshake::server(&mut stream, psk, private_key)?;
 
         // Read a short encrypted message.
         let msg = encrypted.read_message_from_stream(&mut stream)?;

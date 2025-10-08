@@ -14,10 +14,6 @@ use snow::Builder as NoiseBuilder;
 
 #[test]
 fn sync_handshake_works() -> Result<()> {
-    // Define handshake versions.
-    let client_version = Version::init(1, 0);
-    let server_version = Version::init(1, 7);
-
     let psk: [u8; 32] = [1; 32];
 
     // Generate keypairs.
@@ -47,8 +43,7 @@ fn sync_handshake_works() -> Result<()> {
             let mut stream = stream.unwrap();
 
             // Perform the handshake.
-            let mut encrypted =
-                handshake::server(&mut stream, server_version, psk, server_private_key).unwrap();
+            let mut encrypted = handshake::server(&mut stream, psk, server_private_key).unwrap();
 
             // Read a short encrypted message.
             let msg = encrypted.read_message_from_stream(&mut stream).unwrap();
@@ -74,7 +69,7 @@ fn sync_handshake_works() -> Result<()> {
     let mut stream = TcpStream::connect(addr)?;
 
     // Perform the handshake.
-    let mut encrypted = handshake::client(&mut stream, client_version, psk, client_private_key)?;
+    let mut encrypted = handshake::client(&mut stream, psk, client_private_key)?;
 
     // Write a short encrypted message.
     encrypted.write_message_to_stream(&mut stream, msg_1)?;

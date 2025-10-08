@@ -10,7 +10,7 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 
-use cable_handshake::{sync::handshake, Result, Version};
+use cable_handshake::{sync::handshake, Result};
 use snow::Builder as NoiseBuilder;
 
 fn help() {
@@ -24,9 +24,9 @@ tcp {{-s|--server}}
     );
 }
 
-fn setup() -> Result<(Version, [u8; 32], Vec<u8>)> {
+fn setup() -> Result<([u8; 32], Vec<u8>)> {
     // Define handshake version.
-    let version = Version::init(1, 0);
+    //let version = Version::init(1, 0);
 
     // Define pre-shared key.
     let psk: [u8; 32] = [1; 32];
@@ -36,7 +36,7 @@ fn setup() -> Result<(Version, [u8; 32], Vec<u8>)> {
     let keypair = builder.generate_keypair()?;
     let private_key = keypair.private;
 
-    Ok((version, psk, private_key))
+    Ok((psk, private_key))
 }
 
 fn main() {
@@ -53,14 +53,14 @@ fn main() {
 }
 
 fn run_client() -> Result<()> {
-    let (version, psk, private_key) = setup()?;
+    let (psk, private_key) = setup()?;
 
     println!("Connecting to TCP server on 127.0.0.1:9999");
     let mut stream = TcpStream::connect("127.0.0.1:9999")?;
     println!("Connected");
 
     println!("Initiating handshake...");
-    let mut encrypted = handshake::client(&mut stream, version, psk, private_key)?;
+    let mut encrypted = handshake::client(&mut stream, psk, private_key)?;
 
     // Return the public key of the remote peer (as bytes).
     if let Some(key) = encrypted.get_remote_public_key() {
@@ -90,7 +90,7 @@ fn run_client() -> Result<()> {
 }
 
 fn run_server() -> Result<()> {
-    let (version, psk, private_key) = setup()?;
+    let (psk, private_key) = setup()?;
 
     // Deploy a TCP listener.
     let listener = TcpListener::bind("127.0.0.1:9999")?;
@@ -102,7 +102,7 @@ fn run_server() -> Result<()> {
         println!("Accepted connection");
 
         println!("Responding to handshake...");
-        let mut encrypted = handshake::server(&mut stream, version, psk, private_key)?;
+        let mut encrypted = handshake::server(&mut stream, psk, private_key)?;
 
         // Read a short encrypted message.
         let msg = encrypted.read_message_from_stream(&mut stream)?;

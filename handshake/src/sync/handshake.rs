@@ -44,6 +44,8 @@ pub fn client<T: Read + Write>(
     Ok(handshake)
 }
 
+use std::io::stdout;
+
 /// Respond to a handshake over a synchronous stream and run to completion.
 pub fn server<T: Read + Write>(
     stream: &mut T,
@@ -57,10 +59,17 @@ pub fn server<T: Read + Write>(
     // Build Noise state machine.
     let handshake = handshake.build_server_noise_state_machine()?;
 
+    println!("SM created. receving {} bytes", EPHEMERAL_KEY_BYTES_LEN);
     // Receive ephemeral key.
+    stdout().flush()?;
+
     let recv_buf = &mut buf[..EPHEMERAL_KEY_BYTES_LEN];
     stream.read_exact(recv_buf)?;
+    println!("received");
+
     let handshake = handshake.recv_client_ephemeral_key(recv_buf)?;
+
+    println!("processed eph key");
 
     // Send ephemeral and static keys.
     let send_buf = &mut buf[..EPHEMERAL_AND_STATIC_KEY_BYTES_LEN];

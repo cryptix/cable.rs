@@ -25,9 +25,6 @@ tcp {{-s|--server}}
 }
 
 fn setup() -> Result<([u8; 32], Vec<u8>)> {
-    // Define handshake version.
-    //let version = Version::init(1, 0);
-
     // Define pre-shared key.
     let psk: [u8; 32] = [1; 32];
 
